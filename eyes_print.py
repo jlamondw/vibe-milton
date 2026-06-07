@@ -1,14 +1,42 @@
+"""
+Robot Eyes
+
+Displays a pair of animated eyes that track the most prominent
+face detected by the Jetson Nano CSI camera.
+
+Components:
+- Pygame: eye rendering
+- OpenCV DNN: face detection
+- CSI camera via GStreamer
+
+Behavior:
+- Tracks the highest-confidence detected face
+- Smooths eye motion
+- Holds the last face position briefly when detection flickers
+"""
+
 import os
 import sys
 import math
 import time
-import pygame
+
 import cv2
+import pygame
+
+
+# ---------------------------------------------------------------------------
+# Face detector
+# ---------------------------------------------------------------------------
 
 net = cv2.dnn.readNetFromCaffe(
     "/home/jetbot/face_model/deploy.prototxt",
     "/home/jetbot/face_model/res10_300x300_ssd_iter_140000.caffemodel"
 )
+
+
+# ---------------------------------------------------------------------------
+# Camera pipeline
+# ---------------------------------------------------------------------------
 
 def gstreamer_pipeline(
     sensor_id=0,
@@ -38,93 +66,132 @@ def gstreamer_pipeline(
         )
     )
 
+
+# ---------------------------------------------------------------------------
+# Pygame setup
+# ---------------------------------------------------------------------------
+
 os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 pygame.display.init()
 
-last_face_time = 0
-last_target_x = 0.0
-last_target_y = 0.0
-FACE_HOLD_TIME = 0.5  # seconds
-
 WIDTH, HEIGHT = 800, 480
+
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Robot Eyes")
 
 clock = pygame.time.Clock()
 
-eye_radius = int(HEIGHT * 0.2)
+
+# ---------------------------------------------------------------------------
+# Eye configuration
+# ---------------------------------------------------------------------------
+
+# Basic eye dimensions.
+eye_radius = int(HEIGHT * 0.20)
 pupil_radius = int(eye_radius * 0.35)
+
+# Maximum distance pupils can move from eye center.
 max_pupil_offset = eye_radius - pupil_radius - 12
 
-left_eye_center = (int(WIDTH * 0.3), int(HEIGHT * 0.5))
-right_eye_center = (int(WIDTH * 0.7), int(HEIGHT * 0.5))
+left_eye_center = (int(WIDTH * 0.30), int(HEIGHT * 0.50))
+right_eye_center = (int(WIDTH * 0.70), int(HEIGHT * 0.50))
 
+# Smoothed eye position.
 smooth_x = 0.0
 smooth_y = 0.0
-SMOOTHING = 0.3
 
-print("Opening camera...")
-#cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-#if not cap.isOpened():
-#    print("V4L2 open failed, trying default backend...")
-#    cap = cv2.VideoCapture(0)
+# Higher = smoother but slower.
+# Lower = faster but more twitchy.
+SMOOTHING = 0.30
 
-#if not cap.isOpened():
-#    print("ERROR: Could not open camera")
-#    pygame.display.quit()
-#    sys.exit(1)
 
-#cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-#cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+# ---------------------------------------------------------------------------
+# Face tracking state
+# ---------------------------------------------------------------------------
 
-print("Opening CSI camera with GStreamer pipeline...")
-pipeline = gstreamer_pipeline()
+# Hold the last known face position briefly to prevent
+# eye jitter when detection flickers.
+FACE_HOLD_TIME = 0.5
 
-cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+last_face_time = 0.0
+last_target_x = 0.0
+last_target_y = 0.0
 
-if not cap.isOpened():
-    print("ERROR: Could not open CSI camera with GStreamer")
-    pygame.display.quit()
-    sys.exit(1)
 
-print("CSI camera opened successfully")
-
-#print("Camera opened successfully")
-
-cascade_path = "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml"
-if not os.path.exists(cascade_path):
-    cascade_path = "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml"
-
-print("Using cascade:", cascade_path)
-
-# face_cascade = cv2.CascadeClassifier(cascade_path)
-# if face_cascade.empty():
-#    print("ERROR: Could not load Haar cascade")
-#    cap.release()
-#    pygame.display.quit()
-#    sys.exit(1)
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
 
 def clamp_pupil_offset(dx, dy, max_dist):
+    """Keep pupils inside the eye."""
     dist = math.sqrt(dx * dx + dy * dy)
+
     if dist > max_dist and dist > 0:
         scale = max_dist / dist
         dx *= scale
         dy *= scale
+
     return dx, dy
 
+
 def draw_eye(center, offset_x, offset_y):
+    """Draw a single eye."""
+
     cx, cy = center
-    pygame.draw.circle(screen, (255, 255, 255), (cx, cy), eye_radius)
+
+    pygame.draw.circle(
+        screen,
+        (255, 255, 255),
+        (cx, cy),
+        eye_radius
+    )
+
     pupil_x = int(cx + offset_x)
     pupil_y = int(cy + offset_y)
-    pygame.draw.circle(screen, (0, 0, 0), (pupil_x, pupil_y), pupil_radius)
+
+    pygame.draw.circle(
+        screen,
+        (0, 0, 0),
+        (pupil_x, pupil_y),
+        pupil_radius
+    )
+
+
+# ---------------------------------------------------------------------------
+# Camera startup
+# ---------------------------------------------------------------------------
+
+print("Starting robot eyes...")
+print("Opening CSI camera...")
+
+pipeline = gstreamer_pipeline()
+
+cap = cv2.VideoCapture(
+    pipeline,
+    cv2.CAP_GSTREAMER
+)
+
+if not cap.isOpened():
+    print("ERROR: Could not open CSI camera")
+    pygame.display.quit()
+    sys.exit(1)
+
+print("Camera ready")
+print("Face detector loaded")
+
+
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
 
 frame_count = 0
 last_debug_print = time.time()
 
 running = True
+
 while running:
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -137,47 +204,16 @@ while running:
     faces_found = 0
 
     if not ok or frame is None:
+
         if time.time() - last_debug_print > 1.0:
             print("WARNING: camera read failed")
             last_debug_print = time.time()
+
     else:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Improve contrast in low light
-        gray = cv2.equalizeHist(gray)
-
-        # faces = face_cascade.detectMultiScale(
-        #    gray,
-        #    scaleFactor=1.15,
-        #    minNeighbors=3,
-        #    minSize=(30, 30)
-        #)
-
-        # faces_found = len(faces)
-
-        # if faces_found > 0:
-        #    if time.time() - last_debug_print > 1.0:
-        #        print("ok={ok} faces={faces_found} smooth=({smooth_x:.1f},{smooth_y:.1f})")
-        #        last_debug_print = time.time()
-        #    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-        #    face_x = x + w / 2.0
-        #    face_y = y + h / 2.0
-        #    cam_h, cam_w = gray.shape
-
-        #    norm_x = (face_x - cam_w / 2.0) / (cam_w / 2.0)
-        #    norm_y = (face_y - cam_h / 2.0) / (cam_h / 2.0)
-
-            # not sure about putting this here!!!
-            # if abs(norm_x) < 0.1:
-            #    norm_x = 0
-            # if abs(norm_y) < 0.1:
-            #    norm_y = 0
-
-        #    target_x = norm_x * max_pupil_offset * 1.6
-        #    target_y = norm_y * max_pupil_offset * 1.2
 
         (h, w) = frame.shape[:2]
 
+        # Run OpenCV SSD face detector.
         blob = cv2.dnn.blobFromImage(
             cv2.resize(frame, (300, 300)),
             1.0,
@@ -188,22 +224,22 @@ while running:
         net.setInput(blob)
         detections = net.forward()
 
-        faces_found = 0
-        target_x = 0.0
-        target_y = 0.0
-
-        best_conf = 0
+        best_conf = 0.0
         best_center = None
 
+        # Find the highest-confidence face.
         for i in range(detections.shape[2]):
+
             confidence = detections[0, 0, i, 2]
 
             if confidence > 0.4:
-                box = detections[0, 0, i, 3:7] * [w, h, w, h]
-                (x1, y1, x2, y2) = box.astype("int")
 
-                cx = (x1 + x2) / 2
-                cy = (y1 + y2) / 2
+                box = detections[0, 0, i, 3:7] * [w, h, w, h]
+
+                x1, y1, x2, y2 = box.astype("int")
+
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
 
                 if confidence > best_conf:
                     best_conf = confidence
@@ -212,12 +248,16 @@ while running:
         now = time.time()
 
         if best_center is not None:
+
             faces_found = 1
+
             cx, cy = best_center
 
+            # Convert face position into normalized coordinates.
             norm_x = (cx - w / 2) / (w / 2)
             norm_y = (cy - h / 2) / (h / 2)
 
+            # Convert normalized position into pupil movement.
             target_x = -norm_x * max_pupil_offset * 1.6
             target_y = norm_y * max_pupil_offset * 1.2
 
@@ -226,32 +266,64 @@ while running:
             last_face_time = now
 
         else:
-            # No face this frame — hold previous position briefly
+
+            # Face temporarily lost.
+            # Continue looking at the previous location for a short time.
             if now - last_face_time < FACE_HOLD_TIME:
+
                 target_x = last_target_x
                 target_y = last_target_y
-                faces_found = 1  # treat as still tracking
+                faces_found = 1
+
             else:
+
                 target_x = 0.0
                 target_y = 0.0
                 faces_found = 0
 
         if time.time() - last_debug_print > 1.0:
-            print(f"frame={frame_count} ok={ok} faces={faces_found}")
-            print(f"target=({target_x:.1f},{target_y:.1f})")
+
+            print(
+                f"faces={faces_found} "
+                f"target=({target_x:.0f},{target_y:.0f}) "
+                f"smooth=({smooth_x:.0f},{smooth_y:.0f})"
+            )
+
             last_debug_print = time.time()
 
-    target_x, target_y = clamp_pupil_offset(target_x, target_y, max_pupil_offset)
+    # Keep pupils inside the eye.
+    target_x, target_y = clamp_pupil_offset(
+        target_x,
+        target_y,
+        max_pupil_offset
+    )
 
+    # Smooth movement so eyes don't jump instantly.
     smooth_x += (target_x - smooth_x) * SMOOTHING
     smooth_y += (target_y - smooth_y) * SMOOTHING
 
+    # Draw eyes.
     screen.fill((0, 0, 0))
-    draw_eye(left_eye_center, smooth_x, smooth_y)
-    draw_eye(right_eye_center, smooth_x, smooth_y)
+
+    draw_eye(
+        left_eye_center,
+        smooth_x,
+        smooth_y
+    )
+
+    draw_eye(
+        right_eye_center,
+        smooth_x,
+        smooth_y
+    )
 
     pygame.display.flip()
     clock.tick(30)
+
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
 
 cap.release()
 pygame.display.quit()
