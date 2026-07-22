@@ -1,51 +1,53 @@
-import pygame
 import time
 
+from vision import Vision
 from display import Display
-from state import RobotState
 
-display = Display()
 
-state = RobotState()
+def main():
 
-running = True
+    vision = Vision()
+    display = Display()
 
-last_change = time.time()
+    running = True
 
-while running:
+    try:
 
-    for event in pygame.event.get():
+        while running:
 
-        if event.type == pygame.QUIT:
-            running = False
+            face = vision.get_face()
 
-    elapsed = time.time() - last_change
+            print(face)
 
-    if elapsed > 3:
 
-        if state.mode == state.MODE_EYES:
+            if face["found"]:
 
-            state.mode = state.MODE_LISTENING
+                display.track_face(
+                    face["x"],
+                    face["y"]
+                )
 
-        elif state.mode == state.MODE_LISTENING:
+            else:
 
-            state.mode = state.MODE_THINKING
+                display.idle()
 
-        elif state.mode == state.MODE_THINKING:
 
-            state.mode = state.MODE_MESSAGE
+            running = display.update()
 
-            state.message = (
-                "Hello Jared!\n\n"
-                "I'm your Jetbot."
-            )
+            time.sleep(0.01)
 
-        else:
 
-            state.mode = state.MODE_EYES
+    except KeyboardInterrupt:
 
-        last_change = time.time()
+        print("Stopping robot...")
 
-    display.update(state)
 
-pygame.quit()
+    finally:
+
+        vision.close()
+        display.close()
+
+
+
+if __name__ == "__main__":
+    main()
