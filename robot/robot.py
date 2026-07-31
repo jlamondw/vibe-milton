@@ -1,15 +1,22 @@
 import time
 
 from vision import Vision
+from audio import Audio
 from display import Display
+from behavior import Behavior
+
 
 
 def main():
 
     vision = Vision()
+    audio = Audio()
     display = Display()
+    behavior = Behavior()
+
 
     running = True
+
 
     try:
 
@@ -17,24 +24,49 @@ def main():
 
             face = vision.get_face()
 
-            print(face)
+            speaking = audio.is_speaking()
 
 
-            if face["found"]:
+            behavior.update(
+                face,
+                speaking
+            )
 
-                display.track_face(
+
+            state = behavior.get_state()
+
+
+            print(
+                "STATE:",
+                state
+            )
+
+
+            if state == Behavior.LISTENING:
+
+                display.show_message(
+                    "Listening..."
+                )
+
+
+            elif state == Behavior.TRACKING:
+
+                display.look_at(
                     face["x"],
                     face["y"]
                 )
 
-            else:
 
-                display.idle()
+            elif state == Behavior.IDLE:
+
+                display.look_forward()
+
 
 
             running = display.update()
 
             time.sleep(0.01)
+
 
 
     except KeyboardInterrupt:
@@ -45,6 +77,7 @@ def main():
     finally:
 
         vision.close()
+        audio.close()
         display.close()
 
 

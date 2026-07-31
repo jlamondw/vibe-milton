@@ -1,4 +1,7 @@
 import pygame
+import random
+import time
+
 
 WIDTH = 800
 HEIGHT = 480
@@ -7,8 +10,6 @@ HEIGHT = 480
 class Display:
 
     MODE_EYES = "eyes"
-    MODE_LISTENING = "listening"
-    MODE_THINKING = "thinking"
     MODE_MESSAGE = "message"
 
 
@@ -27,9 +28,9 @@ class Display:
         self.font = pygame.font.SysFont(None, 42)
 
 
+        # Eye geometry
         self.eye_radius = int(HEIGHT * 0.2)
         self.pupil_radius = int(self.eye_radius * 0.35)
-
 
         self.left_eye = (
             int(WIDTH * 0.3),
@@ -42,58 +43,130 @@ class Display:
         )
 
 
+        # Current eye position
+        self.current_x = 0.5
+        self.current_y = 0.5
+
+
+        # Target eye position
+        self.target_x = 0.5
+        self.target_y = 0.5
+
+
+        # How quickly eyes move
+        self.follow_speed = 0.12
+
+
+        # State
         self.mode = self.MODE_EYES
         self.message = ""
 
 
-        self.pupil_x = 0
-        self.pupil_y = 0
+        # Blink state
+        self.blinking = False
+        self.blink_amount = 0
+        self.next_blink = time.time() + random.uniform(2, 5)
 
 
 
-    def show_eyes(self):
+    def look_at(self, x, y):
+
+        print(
+            "LOOK AT:",
+            round(x, 2),
+            round(y, 2)
+        )
+
+        # Clamp values
+        # self.target_x = max(0, min(1, x))
+        # self.target_y = max(0, min(1, y))
+        # Increase sensitivity around center
+        self.target_x = 0.5 + (x - 0.5) * 3
+        self.target_y = 0.5 + (y - 0.5) * 3
+
+        self.target_x = max(0, min(1, self.target_x))
+        self.target_y = max(0, min(1, self.target_y))        
+
+
         self.mode = self.MODE_EYES
 
 
-    def show_listening(self):
-        self.mode = self.MODE_LISTENING
 
+    def look_forward(self):
 
-    def show_thinking(self):
-        self.mode = self.MODE_THINKING
+        self.look_at(0.5, 0.5)
+
 
 
     def show_message(self, text):
+
         self.mode = self.MODE_MESSAGE
         self.message = text
 
 
 
-    def track_face(self, x, y):
+    def update_animation(self):
 
-        # Maximum pupil movement
-        max_move = int(self.eye_radius * 0.45)
+        # Smooth movement toward target
+
+        self.current_x += (
+            self.target_x - self.current_x
+        ) * self.follow_speed
 
 
-        # Convert normalized camera coordinates
-        # into eye movement
+        self.current_y += (
+            self.target_y - self.current_y
+        ) * self.follow_speed
 
-        self.pupil_x = int(
-            (x - 0.5) * 2 * max_move
+
+
+    def update_blink(self):
+
+        now = time.time()
+
+
+        if not self.blinking:
+
+            if now >= self.next_blink:
+                self.blinking = True
+                self.blink_amount = 0
+
+
+        else:
+
+            self.blink_amount += 0.25
+
+
+            if self.blink_amount >= 1:
+
+                self.blinking = False
+                self.blink_amount = 0
+
+                self.next_blink = (
+                    now + random.uniform(2, 5)
+                )
+
+
+
+    def get_pupil_offset(self):
+
+        max_move = int(
+            self.eye_radius * 1.2
+            # self.eye_radius * 0.45
         )
 
-        self.pupil_y = int(
-            (y - 0.5) * 2 * max_move
-        )
+
+        dx = (
+            self.current_x - 0.5
+        ) * 2 * max_move
 
 
-        self.show_eyes()
+        dy = (
+            self.current_y - 0.5
+        ) * 2 * max_move
 
 
-
-    def idle(self):
-
-        self.show_eyes()
+        return int(dx), int(dy)
 
 
 
@@ -110,12 +183,35 @@ class Display:
         )
 
 
+        # Simple blink effect
+        if self.blinking:
+
+            height = int(
+                self.eye_radius *
+                (1 - self.blink_amount)
+            )
+
+            pygame.draw.rect(
+                self.screen,
+                (0, 0, 0),
+                (
+                    cx - self.eye_radius,
+                    cy - height,
+                    self.eye_radius * 2,
+                    height * 2
+                )
+            )
+
+            return
+
+
+
         pygame.draw.circle(
             self.screen,
             (0, 0, 0),
             (
-                int(cx + dx),
-                int(cy + dy)
+                cx + dx,
+                cy + dy
             ),
             self.pupil_radius
         )
@@ -124,64 +220,55 @@ class Display:
 
     def draw_eyes(self):
 
-        self.screen.fill((0, 0, 0))
+        self.screen.fill(
+            (0, 0, 0)
+        )
+
+
+        dx, dy = self.get_pupil_offset()
 
 
         self.draw_eye(
             self.left_eye,
-            self.pupil_x,
-            self.pupil_y
+            dx,
+            dy
         )
 
 
         self.draw_eye(
             self.right_eye,
-            self.pupil_x,
-            self.pupil_y
+            dx,
+            dy
         )
 
 
 
-    def draw_centered_text(self, text):
+    def draw_message(self):
 
         self.screen.fill(
             (20, 20, 20)
         )
 
 
-        lines = text.split("\n")
-
-        total_height = len(lines) * 50
-
-        y = (
-            HEIGHT - total_height
-        ) // 2
+        surface = self.font.render(
+            self.message,
+            True,
+            (255, 255, 255)
+        )
 
 
-        for line in lines:
-
-            surface = self.font.render(
-                line,
-                True,
-                (255, 255, 255)
+        rect = surface.get_rect(
+            center=(
+                WIDTH // 2,
+                HEIGHT // 2
             )
+        )
 
 
-            rect = surface.get_rect(
-                center=(
-                    WIDTH // 2,
-                    y
-                )
-            )
-
-
-            self.screen.blit(
-                surface,
-                rect
-            )
-
-
-            y += 50
+        self.screen.blit(
+            surface,
+            rect
+        )
 
 
 
@@ -193,30 +280,15 @@ class Display:
                 return False
 
 
-        if self.mode == self.MODE_EYES:
+        self.update_animation()
+        self.update_blink()
 
+
+        if self.mode == self.MODE_EYES:
             self.draw_eyes()
 
-
-        elif self.mode == self.MODE_LISTENING:
-
-            self.draw_centered_text(
-                "Listening..."
-            )
-
-
-        elif self.mode == self.MODE_THINKING:
-
-            self.draw_centered_text(
-                "Thinking..."
-            )
-
-
         elif self.mode == self.MODE_MESSAGE:
-
-            self.draw_centered_text(
-                self.message
-            )
+            self.draw_message()
 
 
         pygame.display.flip()
