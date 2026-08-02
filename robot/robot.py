@@ -36,20 +36,54 @@ def main():
             state = behavior.get_state()
 
 
-            # print(
-            #     "STATE:",
-            #     state
-            # )
+            print(
+                "STATE:",
+                state
+            )
 
+
+            #
+            # State-driven expressions
+            #
 
             if state == Behavior.LISTENING:
+
+                display.set_expression(
+                    Display.EXPRESSION_LISTENING
+                )
 
                 display.show_message(
                     "Listening..."
                 )
 
 
+            elif state == Behavior.THINKING:
+
+                display.set_expression(
+                    Display.EXPRESSION_THINKING
+                )
+
+                display.show_message(
+                    "Thinking..."
+                )
+
+
+            elif state == Behavior.RESPONDING:
+
+                display.set_expression(
+                    Display.EXPRESSION_HAPPY
+                )
+
+                display.show_message(
+                    behavior.get_message()
+                )
+
+
             elif state == Behavior.TRACKING:
+
+                display.set_expression(
+                    Display.EXPRESSION_NORMAL
+                )
 
                 display.look_at(
                     face["x"],
@@ -58,6 +92,10 @@ def main():
 
 
             elif state == Behavior.IDLE:
+
+                display.set_expression(
+                    Display.EXPRESSION_NORMAL
+                )
 
                 display.look_forward()
 
@@ -71,7 +109,9 @@ def main():
 
     except KeyboardInterrupt:
 
-        print("Stopping robot...")
+        print(
+            "Stopping robot..."
+        )
 
 
     finally:
@@ -83,4 +123,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()

@@ -1,5 +1,4 @@
 import pygame
-import random
 import time
 
 
@@ -11,6 +10,13 @@ class Display:
 
     MODE_EYES = "eyes"
     MODE_MESSAGE = "message"
+
+
+    EXPRESSION_NORMAL = "normal"
+    EXPRESSION_LISTENING = "listening"
+    EXPRESSION_THINKING = "thinking"
+    EXPRESSION_HAPPY = "happy"
+
 
 
     def __init__(self):
@@ -43,17 +49,13 @@ class Display:
         )
 
 
-        # Current eye position
+        # Eye movement
         self.current_x = 0.5
         self.current_y = 0.5
 
-
-        # Target eye position
         self.target_x = 0.5
         self.target_y = 0.5
 
-
-        # How quickly eyes move
         self.follow_speed = 0.12
 
 
@@ -61,32 +63,30 @@ class Display:
         self.mode = self.MODE_EYES
         self.message = ""
 
+        self.expression = self.EXPRESSION_HAPPY
 
-        # Blink state
-        self.blinking = False
-        self.blink_amount = 0
-        self.next_blink = time.time() + random.uniform(2, 5)
+
+
+    def set_expression(self, expression):
+
+        self.expression = expression
 
 
 
     def look_at(self, x, y):
 
-        # print(
-        #     "LOOK AT:",
-        #     round(x, 2),
-        #     round(y, 2)
-        # )
-
-        # Clamp values
-        # self.target_x = max(0, min(1, x))
-        # self.target_y = max(0, min(1, y))
-        # Increase sensitivity around center
         self.target_x = 0.5 + (x - 0.5) * 3
         self.target_y = 0.5 + (y - 0.5) * 3
 
-        self.target_x = max(0, min(1, self.target_x))
-        self.target_y = max(0, min(1, self.target_y))        
+        self.target_x = max(
+            0,
+            min(1, self.target_x)
+        )
 
+        self.target_y = max(
+            0,
+            min(1, self.target_y)
+        )
 
         self.mode = self.MODE_EYES
 
@@ -107,8 +107,6 @@ class Display:
 
     def update_animation(self):
 
-        # Smooth movement toward target
-
         self.current_x += (
             self.target_x - self.current_x
         ) * self.follow_speed
@@ -120,41 +118,11 @@ class Display:
 
 
 
-    def update_blink(self):
-
-        now = time.time()
-
-
-        if not self.blinking:
-
-            if now >= self.next_blink:
-                self.blinking = True
-                self.blink_amount = 0
-
-
-        else:
-
-            self.blink_amount += 0.25
-
-
-            if self.blink_amount >= 1:
-
-                self.blinking = False
-                self.blink_amount = 0
-
-                self.next_blink = (
-                    now + random.uniform(2, 5)
-                )
-
-
-
     def get_pupil_offset(self):
 
         max_move = int(
             self.eye_radius * 1.2
-            # self.eye_radius * 0.45
         )
-
 
         dx = (
             self.current_x - 0.5
@@ -170,6 +138,142 @@ class Display:
 
 
 
+    def draw_eyebrows(self):
+
+        lx, ly = self.left_eye
+        rx, ry = self.right_eye
+
+
+        eyebrow_y = int(
+            self.eye_radius * 1.35
+        )
+
+        eyebrow_width = int(
+            self.eye_radius * 0.6
+        )
+
+
+        thickness = 10
+
+
+
+        if self.expression == self.EXPRESSION_NORMAL:
+
+            left_start = (
+                lx - eyebrow_width // 2,
+                ly - eyebrow_y
+            )
+
+            left_end = (
+                lx + eyebrow_width // 2,
+                ly - eyebrow_y
+            )
+
+            right_start = (
+                rx - eyebrow_width // 2,
+                ry - eyebrow_y
+            )
+
+            right_end = (
+                rx + eyebrow_width // 2,
+                ry - eyebrow_y
+            )
+
+
+
+        elif self.expression == self.EXPRESSION_LISTENING:
+
+            # Slightly raised outer edges
+            left_start = (
+                lx - eyebrow_width // 2,
+                ly - eyebrow_y + 8
+            )
+
+            left_end = (
+                lx + eyebrow_width // 2,
+                ly - eyebrow_y - 8
+            )
+
+            right_start = (
+                rx - eyebrow_width // 2,
+                ry - eyebrow_y - 8
+            )
+
+            right_end = (
+                rx + eyebrow_width // 2,
+                ry - eyebrow_y + 8
+            )
+
+
+
+        elif self.expression == self.EXPRESSION_THINKING:
+
+            # One eyebrow slightly raised
+            left_start = (
+                lx - eyebrow_width // 2,
+                ly - eyebrow_y - 8
+            )
+
+            left_end = (
+                lx + eyebrow_width // 2,
+                ly - eyebrow_y - 8
+            )
+
+            right_start = (
+                rx - eyebrow_width // 2,
+                ry - eyebrow_y
+            )
+
+            right_end = (
+                rx + eyebrow_width // 2,
+                ry - eyebrow_y + 12
+            )
+
+
+
+        else:  # happy
+
+            left_start = (
+                lx - eyebrow_width // 2,
+                ly - eyebrow_y + 8
+            )
+
+            left_end = (
+                lx + eyebrow_width // 2,
+                ly - eyebrow_y - 8
+            )
+
+            right_start = (
+                rx - eyebrow_width // 2,
+                ry - eyebrow_y - 8
+            )
+
+            right_end = (
+                rx + eyebrow_width // 2,
+                ry - eyebrow_y + 8
+            )
+
+
+
+        pygame.draw.line(
+            self.screen,
+            (255,255,255),
+            left_start,
+            left_end,
+            thickness
+        )
+
+
+        pygame.draw.line(
+            self.screen,
+            (255,255,255),
+            right_start,
+            right_end,
+            thickness
+        )
+
+
+
     def draw_eye(self, center, dx, dy):
 
         cx, cy = center
@@ -177,38 +281,15 @@ class Display:
 
         pygame.draw.circle(
             self.screen,
-            (255, 255, 255),
+            (255,255,255),
             (cx, cy),
             self.eye_radius
         )
 
 
-        # Simple blink effect
-        if self.blinking:
-
-            height = int(
-                self.eye_radius *
-                (1 - self.blink_amount)
-            )
-
-            pygame.draw.rect(
-                self.screen,
-                (0, 0, 0),
-                (
-                    cx - self.eye_radius,
-                    cy - height,
-                    self.eye_radius * 2,
-                    height * 2
-                )
-            )
-
-            return
-
-
-
         pygame.draw.circle(
             self.screen,
-            (0, 0, 0),
+            (0,0,0),
             (
                 cx + dx,
                 cy + dy
@@ -221,8 +302,11 @@ class Display:
     def draw_eyes(self):
 
         self.screen.fill(
-            (0, 0, 0)
+            (0,0,0)
         )
+
+
+        self.draw_eyebrows()
 
 
         dx, dy = self.get_pupil_offset()
@@ -246,14 +330,14 @@ class Display:
     def draw_message(self):
 
         self.screen.fill(
-            (20, 20, 20)
+            (20,20,20)
         )
 
 
         surface = self.font.render(
             self.message,
             True,
-            (255, 255, 255)
+            (255,255,255)
         )
 
 
@@ -281,13 +365,15 @@ class Display:
 
 
         self.update_animation()
-        self.update_blink()
 
 
         if self.mode == self.MODE_EYES:
+
             self.draw_eyes()
 
+
         elif self.mode == self.MODE_MESSAGE:
+
             self.draw_message()
 
 
