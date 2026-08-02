@@ -71,11 +71,11 @@ class Display:
 
     def look_at(self, x, y):
 
-        print(
-            "LOOK AT:",
-            round(x, 2),
-            round(y, 2)
-        )
+        # print(
+        #     "LOOK AT:",
+        #     round(x, 2),
+        #     round(y, 2)
+        # )
 
         # Clamp values
         # self.target_x = max(0, min(1, x))

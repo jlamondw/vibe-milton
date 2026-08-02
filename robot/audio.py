@@ -28,13 +28,26 @@ class Audio:
         )
 
 
-        self.threshold = 800
+        # Start listening above this volume
+        self.start_threshold = 1000
+
+        # Stop listening below this volume
+        self.stop_threshold = 850
+
+        # Require multiple samples before changing state
+        self.required_count = 3
+
+        self.high_count = 0
+        self.low_count = 0
+
+        self.listening = False
 
 
 
     def is_speaking(self):
 
-        data = self.process.stdout.read(2048)
+        # About ~100ms of audio
+        data = self.process.stdout.read(8192)
 
 
         if len(data) == 0:
@@ -47,13 +60,64 @@ class Audio:
         )
 
 
-        print("volume:", volume)
+        print(
+            "volume:",
+            volume,
+            "listening:",
+            self.listening
+        )
 
 
-        return volume > self.threshold
+        if not self.listening:
+
+            # Need sustained sound to start listening
+            if volume > self.start_threshold:
+
+                self.high_count += 1
+
+            else:
+
+                self.high_count = 0
+
+
+            if self.high_count >= self.required_count:
+
+                self.listening = True
+                self.low_count = 0
+
+
+
+        else:
+
+            # Need sustained quiet to stop listening
+            if volume < self.stop_threshold:
+
+                self.low_count += 1
+
+            else:
+
+                self.low_count = 0
+
+
+            if self.low_count >= self.required_count:
+
+                self.listening = False
+                self.high_count = 0
+
+
+
+        return self.listening
 
 
 
     def close(self):
 
         self.process.terminate()
+
+        try:
+
+            self.process.wait(timeout=1)
+
+        except Exception:
+
+            self.process.kill()

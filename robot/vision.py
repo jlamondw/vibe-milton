@@ -126,14 +126,14 @@ class Vision:
 
 
             self.last_seen = time.time()
-            print(
-                "FACE PIXELS:",
-                x,
-                y,
-                "IMAGE:",
-                w,
-                h
-            )
+            # print(
+            #     "FACE PIXELS:",
+            #     x,
+            #     y,
+            #     "IMAGE:",
+            #     w,
+            #     h
+            # )
 
             return {
                 "found": True,

@@ -36,10 +36,10 @@ def main():
             state = behavior.get_state()
 
 
-            print(
-                "STATE:",
-                state
-            )
+            # print(
+            #     "STATE:",
+            #     state
+            # )
 
 
             if state == Behavior.LISTENING:
