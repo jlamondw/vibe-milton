@@ -1,5 +1,4 @@
 import pygame
-import time
 
 
 WIDTH = 800
@@ -27,29 +26,41 @@ class Display:
             (WIDTH, HEIGHT)
         )
 
-        pygame.display.set_caption("Robot")
+        pygame.display.set_caption(
+            "Robot"
+        )
 
         self.clock = pygame.time.Clock()
 
-        self.font = pygame.font.SysFont(None, 42)
+        self.font = pygame.font.SysFont(
+            None,
+            42
+        )
 
 
         # Eye geometry
-        self.eye_radius = int(HEIGHT * 0.2)
-        self.pupil_radius = int(self.eye_radius * 0.35)
+        self.eye_radius = int(
+            HEIGHT * 0.2
+        )
+
+        self.pupil_radius = int(
+            self.eye_radius * 0.35
+        )
+
 
         self.left_eye = (
             int(WIDTH * 0.3),
-            int(HEIGHT * 0.5)
+            int(HEIGHT * 0.35)
         )
 
         self.right_eye = (
             int(WIDTH * 0.7),
-            int(HEIGHT * 0.5)
+            int(HEIGHT * 0.35)
         )
 
 
         # Eye movement
+
         self.current_x = 0.5
         self.current_y = 0.5
 
@@ -59,11 +70,16 @@ class Display:
         self.follow_speed = 0.12
 
 
+
         # State
+
         self.mode = self.MODE_EYES
+
         self.message = ""
 
-        self.expression = self.EXPRESSION_HAPPY
+        self.expression = (
+            self.EXPRESSION_NORMAL
+        )
 
 
 
@@ -75,8 +91,14 @@ class Display:
 
     def look_at(self, x, y):
 
-        self.target_x = 0.5 + (x - 0.5) * 3
-        self.target_y = 0.5 + (y - 0.5) * 3
+        self.target_x = (
+            0.5 + (x - 0.5) * 3
+        )
+
+        self.target_y = (
+            0.5 + (y - 0.5) * 3
+        )
+
 
         self.target_x = max(
             0,
@@ -88,19 +110,24 @@ class Display:
             min(1, self.target_y)
         )
 
+
         self.mode = self.MODE_EYES
 
 
 
     def look_forward(self):
 
-        self.look_at(0.5, 0.5)
+        self.look_at(
+            0.5,
+            0.5
+        )
 
 
 
     def show_message(self, text):
 
         self.mode = self.MODE_MESSAGE
+
         self.message = text
 
 
@@ -124,6 +151,7 @@ class Display:
             self.eye_radius * 1.2
         )
 
+
         dx = (
             self.current_x - 0.5
         ) * 2 * max_move
@@ -134,7 +162,10 @@ class Display:
         ) * 2 * max_move
 
 
-        return int(dx), int(dy)
+        return (
+            int(dx),
+            int(dy)
+        )
 
 
 
@@ -148,109 +179,102 @@ class Display:
             self.eye_radius * 1.35
         )
 
-        eyebrow_width = int(
+        width = int(
             self.eye_radius * 0.6
         )
-
 
         thickness = 10
 
 
+        left_start = (
+            lx - width // 2,
+            ly - eyebrow_y
+        )
 
-        if self.expression == self.EXPRESSION_NORMAL:
+        left_end = (
+            lx + width // 2,
+            ly - eyebrow_y
+        )
+
+
+        right_start = (
+            rx - width // 2,
+            ry - eyebrow_y
+        )
+
+        right_end = (
+            rx + width // 2,
+            ry - eyebrow_y
+        )
+
+
+
+        if self.expression == self.EXPRESSION_LISTENING:
 
             left_start = (
-                lx - eyebrow_width // 2,
-                ly - eyebrow_y
-            )
-
-            left_end = (
-                lx + eyebrow_width // 2,
-                ly - eyebrow_y
-            )
-
-            right_start = (
-                rx - eyebrow_width // 2,
-                ry - eyebrow_y
-            )
-
-            right_end = (
-                rx + eyebrow_width // 2,
-                ry - eyebrow_y
-            )
-
-
-
-        elif self.expression == self.EXPRESSION_LISTENING:
-
-            # Slightly raised outer edges
-            left_start = (
-                lx - eyebrow_width // 2,
+                lx - width // 2,
                 ly - eyebrow_y + 8
             )
 
             left_end = (
-                lx + eyebrow_width // 2,
+                lx + width // 2,
                 ly - eyebrow_y - 8
             )
 
             right_start = (
-                rx - eyebrow_width // 2,
+                rx - width // 2,
                 ry - eyebrow_y - 8
             )
 
             right_end = (
-                rx + eyebrow_width // 2,
+                rx + width // 2,
                 ry - eyebrow_y + 8
             )
-
 
 
         elif self.expression == self.EXPRESSION_THINKING:
 
-            # One eyebrow slightly raised
             left_start = (
-                lx - eyebrow_width // 2,
-                ly - eyebrow_y - 8
+                lx - width // 2,
+                ly - eyebrow_y - 5
             )
 
             left_end = (
-                lx + eyebrow_width // 2,
-                ly - eyebrow_y - 8
+                lx + width // 2,
+                ly - eyebrow_y - 5
             )
 
             right_start = (
-                rx - eyebrow_width // 2,
-                ry - eyebrow_y
+                rx - width // 2,
+                ry - eyebrow_y + 10
             )
 
             right_end = (
-                rx + eyebrow_width // 2,
-                ry - eyebrow_y + 12
+                rx + width // 2,
+                ry - eyebrow_y + 10
             )
 
 
-
-        else:  # happy
+        elif self.expression == self.EXPRESSION_HAPPY:
 
             left_start = (
-                lx - eyebrow_width // 2,
-                ly - eyebrow_y + 8
+                lx - width // 2,
+                ly - eyebrow_y + 5
             )
 
             left_end = (
-                lx + eyebrow_width // 2,
-                ly - eyebrow_y - 8
+                lx + width // 2,
+                ly - eyebrow_y - 5
             )
 
             right_start = (
-                rx - eyebrow_width // 2,
-                ry - eyebrow_y - 8
+                rx - width // 2,
+                ry - eyebrow_y - 5
             )
 
             right_end = (
-                rx + eyebrow_width // 2,
-                ry - eyebrow_y + 8
+                rx + width // 2,
+                ry - eyebrow_y + 5
             )
 
 
@@ -299,12 +323,7 @@ class Display:
 
 
 
-    def draw_eyes(self):
-
-        self.screen.fill(
-            (0,0,0)
-        )
-
+    def draw_face(self):
 
         self.draw_eyebrows()
 
@@ -329,9 +348,7 @@ class Display:
 
     def draw_message(self):
 
-        self.screen.fill(
-            (20,20,20)
-        )
+        self.draw_face()
 
 
         surface = self.font.render(
@@ -344,7 +361,7 @@ class Display:
         rect = surface.get_rect(
             center=(
                 WIDTH // 2,
-                HEIGHT // 2
+                HEIGHT * 0.78
             )
         )
 
@@ -364,17 +381,23 @@ class Display:
                 return False
 
 
+        self.screen.fill(
+            (0,0,0)
+        )
+
+
         self.update_animation()
 
 
         if self.mode == self.MODE_EYES:
 
-            self.draw_eyes()
+            self.draw_face()
 
 
         elif self.mode == self.MODE_MESSAGE:
 
             self.draw_message()
+
 
 
         pygame.display.flip()

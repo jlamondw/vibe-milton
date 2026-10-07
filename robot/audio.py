@@ -1,123 +1,232 @@
-import subprocess
 import audioop
+import json
+import subprocess
+import threading
+import time
+from collections import deque
+
+from vosk import Model, KaldiRecognizer, SetLogLevel
+
+
+MODEL_PATH = "/home/jetbot/vosk-model-small-en-us-0.15"
+
+AUDIO_DEVICE = "hw:2,0"
+
+INPUT_RATE = 44100
+VOSK_RATE = 16000
+
+# Read approximately 100 ms of microphone audio at a time.
+CHUNK_SECONDS = 0.10
+CHUNK_BYTES = int(INPUT_RATE * 2 * CHUNK_SECONDS)
+
+# These are the thresholds that were working reasonably well for you.
+START_THRESHOLD = 1000
+STOP_THRESHOLD = 850
+
+# Require several chunks above the threshold before deciding
+# that the user has started speaking.
+START_COUNT_REQUIRED = 3
+
+# Require several quiet chunks before deciding that the
+# user has finished speaking.
+STOP_COUNT_REQUIRED = 6
+
+# Keep a little audio from immediately before speech detection.
+# This helps prevent losing the first word.
+PREBUFFER_CHUNKS = 5
+
+
+COMMANDS = [
+    "hello",
+    "hi",
+    "hey",
+
+    "joke",
+    "tell me a joke",
+
+    "happy",
+    "are you happy",
+
+    "sleep",
+    "go to sleep",
+
+    "[unk]"
+]
 
 
 class Audio:
-
     def __init__(self):
+        SetLogLevel(-1)
 
-        self.device = "hw:2,0"
+        print("Loading speech model...")
+        self.model = Model(MODEL_PATH)
+        print("Speech model loaded.")
 
-        self.process = subprocess.Popen(
-            [
-                "arecord",
-                "-D",
-                self.device,
-                "-f",
-                "S16_LE",
-                "-r",
-                "44100",
-                "-c",
-                "1",
-                "-t",
-                "raw"
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0
+        self.running = True
+        self.speaking = False
+        self.new_text = ""
+
+        self.start_count = 0
+        self.stop_count = 0
+
+        self.prebuffer = deque(maxlen=PREBUFFER_CHUNKS)
+
+        self.recognizer = None
+        self.ratecv_state = None
+
+        self.process = None
+
+        self.lock = threading.Lock()
+
+        self.start_microphone()
+
+        self.thread = threading.Thread(
+            target=self.capture_loop
         )
+        self.thread.daemon = True
+        self.thread.start()
 
+    def start_microphone(self):
+        print("Starting microphone...")
 
-        # Start listening above this volume
-        self.start_threshold = 1000
-
-        # Stop listening below this volume
-        self.stop_threshold = 850
-
-        # Require multiple samples before changing state
-        self.required_count = 3
-
-        self.high_count = 0
-        self.low_count = 0
-
-        self.listening = False
-
-
-
-    def is_speaking(self):
-
-        # About ~100ms of audio
-        data = self.process.stdout.read(8192)
-
-
-        if len(data) == 0:
-            return False
-
-
-        volume = audioop.rms(
-            data,
-            2
-        )
-
-
-        print(
-            "volume:",
-            volume,
-            "listening:",
-            self.listening
-        )
-
-
-        if not self.listening:
-
-            # Need sustained sound to start listening
-            if volume > self.start_threshold:
-
-                self.high_count += 1
-
-            else:
-
-                self.high_count = 0
-
-
-            if self.high_count >= self.required_count:
-
-                self.listening = True
-                self.low_count = 0
-
-
-
-        else:
-
-            # Need sustained quiet to stop listening
-            if volume < self.stop_threshold:
-
-                self.low_count += 1
-
-            else:
-
-                self.low_count = 0
-
-
-            if self.low_count >= self.required_count:
-
-                self.listening = False
-                self.high_count = 0
-
-
-
-        return self.listening
-
-
-
-    def close(self):
-
-        self.process.terminate()
+        command = [
+            "arecord",
+            "-D", AUDIO_DEVICE,
+            "-f", "S16_LE",
+            "-r", str(INPUT_RATE),
+            "-c", "1",
+            "-t", "raw",
+            "-q"
+        ]
 
         try:
+            self.process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0
+            )
+        except Exception as e:
+            print("Could not start microphone:")
+            print(e)
+            self.process = None
 
-            self.process.wait(timeout=1)
+    def make_recognizer(self):
+        grammar = json.dumps(COMMANDS)
 
-        except Exception:
+        return KaldiRecognizer(
+            self.model,
+            VOSK_RATE,
+            grammar
+        )
 
-            self.process.kill()
+    def capture_loop(self):
+        if self.process is None:
+            return
+
+        while self.running:
+            try:
+                data = self.process.stdout.read(CHUNK_BYTES)
+            except Exception:
+                break
+
+            if not data:
+                break
+
+            rms = audioop.rms(data, 2)
+
+            converted_audio, self.ratecv_state = audioop.ratecv(
+                data,
+                2,
+                1,
+                INPUT_RATE,
+                VOSK_RATE,
+                self.ratecv_state
+            )
+
+            if not self.speaking:
+                self.prebuffer.append(converted_audio)
+
+                if rms >= START_THRESHOLD:
+                    self.start_count += 1
+                else:
+                    self.start_count = 0
+
+                if self.start_count >= START_COUNT_REQUIRED:
+                    self.speaking = True
+                    self.stop_count = 0
+                    self.start_count = 0
+
+                    print("LISTENING")
+
+                    self.recognizer = self.make_recognizer()
+
+                    # Feed the audio immediately before speech started.
+                    for buffered_audio in self.prebuffer:
+                        self.recognizer.AcceptWaveform(buffered_audio)
+
+                    self.prebuffer.clear()
+
+            else:
+                if self.recognizer is not None:
+                    self.recognizer.AcceptWaveform(converted_audio)
+
+                if rms <= STOP_THRESHOLD:
+                    self.stop_count += 1
+                else:
+                    self.stop_count = 0
+
+                if self.stop_count >= STOP_COUNT_REQUIRED:
+                    self.finish_utterance()
+
+            time.sleep(0.001)
+
+    def finish_utterance(self):
+        text = ""
+
+        if self.recognizer is not None:
+            try:
+                result = json.loads(
+                    self.recognizer.FinalResult()
+                )
+                text = result.get("text", "").strip()
+            except Exception as e:
+                print("Speech recognition error:")
+                print(e)
+
+        print("RECOGNIZED:", repr(text))
+
+        with self.lock:
+            self.new_text = text
+
+        self.speaking = False
+        self.stop_count = 0
+        self.start_count = 0
+        self.recognizer = None
+        self.prebuffer.clear()
+
+    def is_speaking(self):
+        return self.speaking
+
+    def get_text(self):
+        with self.lock:
+            text = self.new_text
+            self.new_text = ""
+
+        return text
+
+    def close(self):
+        print("Stopping microphone...")
+
+        self.running = False
+
+        if self.process is not None:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
+
+        if hasattr(self, "thread"):
+            self.thread.join(timeout=1.0)
+
+        self.process = None
