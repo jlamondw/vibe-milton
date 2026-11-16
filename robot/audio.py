@@ -1,3 +1,4 @@
+
 import audioop
 import json
 import subprocess
@@ -15,24 +16,15 @@ AUDIO_DEVICE = "hw:2,0"
 INPUT_RATE = 44100
 VOSK_RATE = 16000
 
-# Read approximately 100 ms of microphone audio at a time.
 CHUNK_SECONDS = 0.10
 CHUNK_BYTES = int(INPUT_RATE * 2 * CHUNK_SECONDS)
 
-# These are the thresholds that were working reasonably well for you.
 START_THRESHOLD = 1000
 STOP_THRESHOLD = 850
 
-# Require several chunks above the threshold before deciding
-# that the user has started speaking.
 START_COUNT_REQUIRED = 3
-
-# Require several quiet chunks before deciding that the
-# user has finished speaking.
 STOP_COUNT_REQUIRED = 6
 
-# Keep a little audio from immediately before speech detection.
-# This helps prevent losing the first word.
 PREBUFFER_CHUNKS = 5
 
 
@@ -40,29 +32,30 @@ COMMANDS = [
     "hello",
     "hi",
     "hey",
-
     "joke",
     "tell me a joke",
-
     "happy",
     "are you happy",
-
     "sleep",
     "go to sleep",
-
     "[unk]"
 ]
 
 
 class Audio:
-    def __init__(self):
+    def __init__(self, grammar=COMMANDS):
         SetLogLevel(-1)
 
         print("Loading speech model...")
         self.model = Model(MODEL_PATH)
         print("Speech model loaded.")
 
+        # Keep the original command grammar by default.
+        # Pass grammar=None to recognize unrestricted speech.
+        self.grammar = grammar
+
         self.running = True
+        self.paused = False
         self.speaking = False
         self.new_text = ""
 
@@ -75,7 +68,6 @@ class Audio:
         self.ratecv_state = None
 
         self.process = None
-
         self.lock = threading.Lock()
 
         self.start_microphone()
@@ -112,13 +104,20 @@ class Audio:
             self.process = None
 
     def make_recognizer(self):
-        grammar = json.dumps(COMMANDS)
+        if self.grammar is None:
+            return KaldiRecognizer(
+                self.model,
+                VOSK_RATE
+            )
 
         return KaldiRecognizer(
             self.model,
             VOSK_RATE,
-            grammar
+            json.dumps(self.grammar)
         )
+
+    def set_paused(self, paused):
+        self.paused = paused
 
     def capture_loop(self):
         if self.process is None:
@@ -132,6 +131,16 @@ class Audio:
 
             if not data:
                 break
+
+            # Discard microphone input while Milton is responding.
+            if self.paused:
+                self.speaking = False
+                self.start_count = 0
+                self.stop_count = 0
+                self.recognizer = None
+                self.prebuffer.clear()
+                self.ratecv_state = None
+                continue
 
             rms = audioop.rms(data, 2)
 
@@ -161,15 +170,18 @@ class Audio:
 
                     self.recognizer = self.make_recognizer()
 
-                    # Feed the audio immediately before speech started.
                     for buffered_audio in self.prebuffer:
-                        self.recognizer.AcceptWaveform(buffered_audio)
+                        self.recognizer.AcceptWaveform(
+                            buffered_audio
+                        )
 
                     self.prebuffer.clear()
 
             else:
                 if self.recognizer is not None:
-                    self.recognizer.AcceptWaveform(converted_audio)
+                    self.recognizer.AcceptWaveform(
+                        converted_audio
+                    )
 
                 if rms <= STOP_THRESHOLD:
                     self.stop_count += 1
