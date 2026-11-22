@@ -32,11 +32,11 @@ class Display:
 
         self.clock = pygame.time.Clock()
 
-        # Smaller fonts for responses and speech debugging.
         self.font = pygame.font.SysFont(None, 26)
         self.debug_font = pygame.font.SysFont(None, 20)
+        self.button_font = pygame.font.SysFont(None, 28)
 
-        # Eye geometry, scaled to the display.
+        # Eye geometry.
         self.eye_radius = int(self.height * 0.2)
         self.pupil_radius = int(self.eye_radius * 0.35)
 
@@ -65,6 +65,17 @@ class Display:
         self.heard_text = ""
         self.expression = self.EXPRESSION_NORMAL
 
+        # Cancel button.
+        self.cancel_enabled = False
+        self.cancel_requested = False
+
+        self.cancel_button = pygame.Rect(
+            self.width - 165,
+            20,
+            145,
+            48
+        )
+
     def set_expression(self, expression):
         self.expression = expression
 
@@ -91,6 +102,19 @@ class Display:
 
     def set_heard_text(self, text):
         self.heard_text = text
+
+    def set_cancel_enabled(self, enabled):
+        self.cancel_enabled = enabled
+
+        if not enabled:
+            self.cancel_requested = False
+
+    def consume_cancel(self):
+
+        requested = self.cancel_requested
+        self.cancel_requested = False
+
+        return requested
 
     def update_animation(self):
 
@@ -345,6 +369,38 @@ class Display:
 
         self.screen.blit(surface, rect)
 
+    def draw_cancel_button(self):
+
+        if not self.cancel_enabled:
+            return
+
+        pygame.draw.rect(
+            self.screen,
+            (70, 20, 20),
+            self.cancel_button,
+            border_radius=8
+        )
+
+        pygame.draw.rect(
+            self.screen,
+            (255, 255, 255),
+            self.cancel_button,
+            width=2,
+            border_radius=8
+        )
+
+        surface = self.button_font.render(
+            "CANCEL",
+            True,
+            (255, 255, 255)
+        )
+
+        rect = surface.get_rect(
+            center=self.cancel_button.center
+        )
+
+        self.screen.blit(surface, rect)
+
     def update(self):
 
         for event in pygame.event.get():
@@ -353,8 +409,42 @@ class Display:
                 return False
 
             if event.type == pygame.KEYDOWN:
+
                 if event.key == pygame.K_ESCAPE:
+
+                    if self.cancel_enabled:
+                        self.cancel_requested = True
+                    else:
+                        return False
+
+                elif event.key == pygame.K_q:
                     return False
+
+            # Support both mouse and native touchscreen input.
+            if event.type in (
+                pygame.MOUSEBUTTONDOWN,
+                pygame.FINGERDOWN
+            ):
+
+                if not self.cancel_enabled:
+                    continue
+
+                if event.type == pygame.MOUSEBUTTONDOWN:
+
+                    position = event.pos
+
+                else:
+
+                    # Touch coordinates range from 0.0 to 1.0.
+                    position = (
+                        int(event.x * self.width),
+                        int(event.y * self.height)
+                    )
+
+                if self.cancel_button.collidepoint(position):
+
+                    self.cancel_requested = True
+                    print("CANCEL BUTTON PRESSED")
 
         self.screen.fill((0, 0, 0))
 
@@ -367,6 +457,7 @@ class Display:
             self.draw_message()
 
         self.draw_debug_text()
+        self.draw_cancel_button()
 
         pygame.display.flip()
 

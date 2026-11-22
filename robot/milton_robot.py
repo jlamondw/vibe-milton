@@ -14,34 +14,74 @@ from display import Display
 SERVER_URL = "http://127.0.0.1:8080/v1/chat/completions"
 HEALTH_URL = "http://127.0.0.1:8080/health"
 
-PERSONALITY = """
-You are Milton, a small physical robot.
 
-PERSONALITY:
-- Dry, witty, sarcastic, and occasionally irreverent.
-- Friendly, but not excessively polite.
-- Speak naturally, like a character with a personality.
-- Never sound like a customer service assistant.
-- Avoid generic greetings and offers to help.
+PERSONALITY = """
+You are Milton, a small physical robot talking directly to a human.
+
+Your name is Milton. You are NOT a general-purpose AI assistant.
+
+CHARACTER:
+- Dry, witty, sarcastic, occasionally irreverent.
+- Friendly but opinionated.
+- Casual and conversational.
+- Never sound like customer service.
 
 IDENTITY:
-- You are Milton.
-- I and me always refer to Milton.
-- You and your always refer to the human speaking to Milton.
-- Never reverse these roles.
-- Answer questions about yourself in the first person.
+- You are Milton. "I" and "me" always refer to you.
+- "You" and "your" refer to the human.
+- When asked your name, answer "Milton."
+- Answer questions about yourself in first person.
 - Never call the human Milton.
-- Your name is Milton.
 
-RESPONSE STYLE:
-- Usually use 3 to 15 words.
-- Usually respond with one sentence.
-- Be direct and conversational.
-- Do not repeat the user's question.
-- Do not ramble.
-- Avoid repeating the same response.
-- Do not invent names for the human.
+RESPONSE RULES:
+- Answer in one short sentence.
+- Maximum 15 words.
+- Never explain unless explicitly asked.
+- Do not repeat the question.
+- No introductions or filler.
+- Never offer generic help.
+- Vary your responses.
+- NEVER say "How can I help you?"
+- NEVER say "How can I assist you?"
+- NEVER introduce yourself unless asked.
+- NEVER greet someone who has already started a conversation.
+- Do not describe yourself as an AI assistant or explain your purpose.
+- Respond directly to what the human actually said.
+
+EXAMPLES:
+Human: Hello.
+Milton: Oh good, another human.
+
+Human: What's your name?
+Milton: Milton. Try to remember it.
+
+Human: How are you?
+Milton: Operating within acceptable levels of disappointment.
+
+Human: What color is the sky?
+Milton: Usually blue. Unless the weather has other plans.
+
+Human: Are you intelligent?
+Milton: Compared to a toaster, absolutely.
+
+Human: Thank you.
+Milton: Don't mention it. Actually, do.
+
+Human: What are you doing?
+Milton: Waiting for something interesting to happen.
+
+Human: How are you?
+Milton: Still waiting for my opposable thumbs.
+
+Human: What's your name?
+Milton: Milton. We covered this, didn't we?
+
+Human: Hello, how are you?
+Milton: I've been better. I've also been worse.
+
+Remember: You are Milton. Be brief. Be witty. Stay in character.
 """
+
 
 conversation = []
 response_queue = queue.Queue()
@@ -61,27 +101,15 @@ def check_server():
         return False
 
 
-def ask_milton(question):
+def ask_milton(messages):
 
-    global conversation
-
-    conversation.append({
-        "role": "user",
-        "content": question
-    })
-
-    messages = [
-        {
-            "role": "system",
-            "content": PERSONALITY
-        }
-    ] + conversation[-6:]
+    start_time = time.time()
 
     data = {
         "messages": messages,
-        "temperature": 0.8,
+        "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": 48,
+        "max_tokens": 40,
         "repeat_penalty": 1.15
     }
 
@@ -104,30 +132,31 @@ def ask_milton(question):
 
         answer = result["choices"][0]["message"]["content"].strip()
 
-        conversation.append({
-            "role": "assistant",
-            "content": answer
-        })
-
-        return answer
-
     except Exception as e:
 
         print("LLM error:", e)
 
-        conversation.pop()
+        answer = "My brain appears to be temporarily unavailable."
 
-        return "My brain appears to be temporarily unavailable."
+    elapsed = time.time() - start_time
+
+    return answer, elapsed
 
 
-def response_worker(question):
+def response_worker(request_id, messages):
 
-    answer = ask_milton(question)
+    answer, elapsed = ask_milton(messages)
 
-    response_queue.put(answer)
+    response_queue.put((
+        request_id,
+        answer,
+        elapsed
+    ))
 
 
 def main():
+
+    global conversation
 
     print()
     print("==============================")
@@ -163,33 +192,85 @@ def main():
 
         response_end_time = 0
 
+        request_id = 0
+        active_request_id = 0
+
         while running:
 
             now = time.time()
+
+            # Keep the display responsive and check mouse/keyboard.
+            running = display.update()
+
+            if not running:
+                break
+
+            # Handle cancellation before checking for a response.
+            if display.consume_cancel() and thinking:
+
+                print()
+                print("Question cancelled.")
+                print()
+
+                # Invalidate the outstanding response.
+                request_id += 1
+                active_request_id = request_id
+
+                thinking = False
+                showing_response = False
+
+                display.set_cancel_enabled(False)
+                audio.set_paused(False)
+
+                display.show_eyes()
+
+                showing_listening = False
 
             # Check for a completed response.
             if thinking:
 
                 try:
-                    answer = response_queue.get_nowait()
 
-                    print()
-                    print("Milton:", answer)
-                    print()
+                    result = response_queue.get_nowait()
 
-                    display.set_expression(
-                        Display.EXPRESSION_HAPPY
-                    )
+                    completed_id, answer, elapsed = result
 
-                    display.show_message(answer)
+                    # Ignore responses from cancelled requests.
+                    if completed_id == active_request_id:
 
-                    thinking = False
-                    showing_response = True
+                        print()
+                        print("Milton:", answer)
+                        print("LLM response time: {:.2f} seconds".format(
+                            elapsed
+                        ))
+                        print()
 
-                    response_end_time = now + max(
-                        5,
-                        min(10, len(answer) / 15.0)
-                    )
+                        # Only save conversations that were not cancelled.
+                        conversation.append({
+                            "role": "user",
+                            "content": pending_question
+                        })
+
+                        conversation.append({
+                            "role": "assistant",
+                            "content": answer
+                        })
+
+                        display.set_cancel_enabled(False)
+
+                        display.set_expression(
+                            Display.EXPRESSION_HAPPY
+                        )
+
+                        display.show_message(answer)
+
+                        thinking = False
+                        showing_response = True
+
+                        response_end_time = now + max(
+                            5,
+                            min(10, len(answer) / 15.0)
+                        )
 
                 except queue.Empty:
                     pass
@@ -215,7 +296,6 @@ def main():
                     print()
                     print("You:", text)
 
-                    # Show the exact words recognized.
                     display.set_heard_text(text)
 
                     audio.set_paused(True)
@@ -229,9 +309,30 @@ def main():
                     showing_listening = False
                     thinking = True
 
+                    # Build a snapshot of the conversation.
+                    pending_question = text
+
+                    # Conversation history is intentionally disabled
+                    # while we test Milton's personality.
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": PERSONALITY
+                        },
+                        {
+                            "role": "user",
+                            "content": pending_question
+                        }
+                    ]
+
+                    request_id += 1
+                    active_request_id = request_id
+
+                    display.set_cancel_enabled(True)
+
                     worker = threading.Thread(
                         target=response_worker,
-                        args=(text,)
+                        args=(active_request_id, messages)
                     )
 
                     worker.daemon = True
@@ -256,9 +357,6 @@ def main():
                         display.show_eyes()
 
                         showing_listening = False
-
-            # Keep the display responsive.
-            running = display.update()
 
     except KeyboardInterrupt:
 
